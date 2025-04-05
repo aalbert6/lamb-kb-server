@@ -941,6 +941,173 @@ async def list_files(
     return CollectionsService.list_files(collection_id, db, status)
 
 
+@app.get(
+    "/files/{file_id}/content",
+    summary="Get file content",
+    description="Get the content of a file from the collection",
+    tags=["Files"],
+    responses={
+        200: {"description": "File content retrieved successfully"},
+        401: {"description": "Unauthorized - Invalid or missing authentication token"},
+        404: {"description": "File not found"},
+        500: {"description": "Server error"}
+    }
+)
+async def get_file_content(
+    file_id: int,
+    token: str = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get the content of a file.
+    
+    This is useful for previewing the content of a file, especially for URLs that have been ingested.
+    
+    Args:
+        file_id: ID of the file registry entry
+        token: Authentication token
+        db: Database session
+        
+    Returns:
+        Content of the file
+        
+    Raises:
+        HTTPException: If file not found or content cannot be retrieved
+    """
+    try:
+        # Get file registry entry
+        file_registry = db.query(FileRegistry).filter(FileRegistry.id == file_id).first()
+        if not file_registry:
+            raise HTTPException(
+                status_code=404,
+                detail=f"File with ID {file_id} not found"
+            )
+        
+        # Get the file content based on the plugin type
+        file_content = ""
+        content_type = "text"
+        
+        # Get collection for any file type
+        collection = db.query(Collection).filter(Collection.id == file_registry.collection_id).first()
+        if not collection:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection with ID {file_registry.collection_id} not found"
+            )
+            
+        # Get database content from ChromaDB
+        from database.connection import get_chroma_client
+        
+        # Get ChromaDB client and collection
+        chroma_client = get_chroma_client()
+        chroma_collection = chroma_client.get_collection(name=collection.name)
+        
+        # Get the source filename/url
+        source = file_registry.original_filename
+        
+        # Get the file type and plugin name
+        plugin_name = file_registry.plugin_name
+        
+        # Set the appropriate file type based on extension or plugin
+        original_extension = ""
+        if "." in source:
+            original_extension = source.split(".")[-1].lower()
+            
+        # Determine content type based on file extension or plugin name
+        if plugin_name == "url_ingest" or source.startswith(("http://", "https://")):
+            content_type = "markdown"  # URL content from firecrawl is markdown
+        elif original_extension in ["md", "markdown"]:
+            content_type = "markdown"
+        elif original_extension in ["txt", "text"]:
+            content_type = "text"
+        else:
+            content_type = "text"  # Default to text
+            
+        # Query ChromaDB for documents with this source
+        results = chroma_collection.get(
+            where={"source": source}, 
+            include=["documents", "metadatas"]
+        )
+        
+        if not results or not results["documents"] or len(results["documents"]) == 0:
+            # Try other fields if "source" doesn't work
+            results = chroma_collection.get(
+                where={"filename": source}, 
+                include=["documents", "metadatas"]
+            )
+            
+        if not results or not results["documents"] or len(results["documents"]) == 0:
+            # For regular files, the source field might be the file path
+            # Try to find by just the filename part
+            import os
+            filename = os.path.basename(source)
+            if filename:
+                results = chroma_collection.get(
+                    where={"filename": filename}, 
+                    include=["documents", "metadatas"]
+                )
+                
+        if not results or not results["documents"] or len(results["documents"]) == 0:
+            # If we still haven't found it, check if there's a physical file we can read
+            if os.path.exists(file_registry.file_path) and os.path.isfile(file_registry.file_path):
+                try:
+                    with open(file_registry.file_path, 'r', encoding='utf-8') as f:
+                        file_content = f.read()
+                        
+                    return {
+                        "file_id": file_id,
+                        "original_filename": source,
+                        "content": file_content,
+                        "content_type": content_type,
+                        "chunk_count": 1,
+                        "timestamp": file_registry.updated_at.isoformat() if file_registry.updated_at else None
+                    }
+                except Exception as e:
+                    print(f"Error reading file from disk: {str(e)}")
+                    # Continue to error handling
+            
+            raise HTTPException(
+                status_code=404,
+                detail=f"No content found for file: {source}"
+            )
+        
+        # Reconstruct the content from chunks
+        # First sort by chunk_index
+        chunk_docs = []
+        for i, doc in enumerate(results["documents"]):
+            if i < len(results["metadatas"]) and results["metadatas"][i]:
+                metadata = results["metadatas"][i]
+                chunk_docs.append({
+                    "text": doc,
+                    "index": metadata.get("chunk_index", i),
+                    "count": metadata.get("chunk_count", 0)
+                })
+        
+        # Sort chunks by index
+        chunk_docs.sort(key=lambda x: x["index"])
+        
+        # Join all chunks
+        full_content = "\n".join(doc["text"] for doc in chunk_docs)
+        
+        # Return content with metadata
+        return {
+            "file_id": file_id,
+            "original_filename": source,
+            "content": full_content,
+            "content_type": content_type,
+            "chunk_count": len(chunk_docs),
+            "timestamp": file_registry.updated_at.isoformat() if file_registry.updated_at else None
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        import traceback
+        print(f"Error retrieving file content: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve file content: {str(e)}"
+        )
+
 # Note: The endpoint below does NOT use the /collections prefix from the router
 @router.put(
     "/files/{file_id}/status", # Define path relative to root
@@ -976,3 +1143,8 @@ async def update_file_status(
     """
     # Use CollectionsService which is already imported
     return CollectionsService.update_file_status(file_id, status, db) 
+
+
+
+
+

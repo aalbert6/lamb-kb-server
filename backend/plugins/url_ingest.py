@@ -19,7 +19,7 @@ load_dotenv()
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY", "")
 FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "")
 
-# Import Firecrawl SDK
+# Import Firecrawl SDK 
 from firecrawl.firecrawl import FirecrawlApp
 
 # Import chunking utilities

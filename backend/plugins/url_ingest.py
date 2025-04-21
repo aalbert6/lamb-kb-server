@@ -28,7 +28,7 @@ from .base import IngestPlugin, PluginRegistry
 
 
 @PluginRegistry.register
-class URLIngestPlugin(IngestPlugin):
+class URLIngestPlugin(IngestPlugin): 
     """Plugin for ingesting web pages from URLs using Firecrawl."""
     
     name = "url_ingest"

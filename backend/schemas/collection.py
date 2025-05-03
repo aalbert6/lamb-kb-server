@@ -61,3 +61,9 @@ class CollectionList(BaseModel):
     """Schema for list of collections response."""
     total: int = Field(..., description="Total number of collections matching filters")
     items: List[CollectionResponse] = Field(..., description="List of collections")
+
+
+# Schema for the response when creating a collection (just the ID)
+class CollectionCreateResponse(BaseModel):
+    """Response schema when creating a collection, returning only the ID."""
+    id: int = Field(..., description="Unique identifier of the newly created collection")

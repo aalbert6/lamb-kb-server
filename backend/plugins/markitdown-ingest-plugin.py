@@ -13,7 +13,8 @@ class MarkItDownIngestPlugin(IngestPlugin):
     """Plugin for ingesting files by converting them to Markdown using MarkItDown and then applying LangChain chunking."""
     
     name = "markitdown_ingest"
-    description = "Ingest various file formats by converting to Markdown using MarkItDown with LangChain chunking"
+    kind = "file-ingest"
+    description = "Ingest various file formats by converting to Markdown using MarkItDown with configurable chunking"
 
     supported_file_types = {
         "pdf", "pptx", "docx", "xlsx", "xls", "mp3", "wav", "html", "csv", "json", "xml", "zip", "epub"

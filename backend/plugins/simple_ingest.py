@@ -18,8 +18,9 @@ class SimpleIngestPlugin(IngestPlugin):
     """Plugin for ingesting simple text files with LangChain's RecursiveCharacterTextSplitter."""
     
     name = "simple_ingest"
-    description = "Ingest text files with LangChain's RecursiveCharacterTextSplitter"
-    supported_file_types = {"txt", "md", "markdown", "text"}
+    kind = "file-ingest"
+    description = "Ingest text files with configurable chunking options"
+    supported_file_types = {"*.txt", "*.md"}
     
     def get_parameters(self) -> Dict[str, Dict[str, Any]]:
         """Get the parameters accepted by this plugin.

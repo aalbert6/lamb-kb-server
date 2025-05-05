@@ -16,10 +16,10 @@ class IngestionPluginInfo(BaseModel):
     """Information about an ingestion plugin."""
     
     name: str = Field(..., description="Name of the plugin")
+    kind: str = Field(..., description="Kind of the plugin (e.g., 'file', 'url')")
     description: str = Field(..., description="Description of the plugin")
     supported_file_types: List[str] = Field(..., description="File types supported by the plugin")
     parameters: Dict[str, Dict[str, Any]] = Field(..., description="Parameters accepted by the plugin")
-
 
 class SimpleIngestParams(BaseModel):
     """Parameters for the simple_ingest plugin."""

@@ -35,8 +35,9 @@ class URLIngestPlugin(IngestPlugin):
     """Plugin for ingesting web pages from URLs using Firecrawl."""
     
     name = "url_ingest"
-    description = "Ingest web pages from URLs using Firecrawl and LangChain for chunking"
-    supported_file_types = {"url"}
+    description = "Ingest web pages from URLs using Firecrawl"
+    kind = "base-ingest"
+    supported_file_types = {}
     
     def __init__(self):
         """Initialize the plugin with Firecrawl app."""

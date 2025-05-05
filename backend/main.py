@@ -163,3 +163,37 @@ async def list_ingestion_plugins(token: str = Depends(verify_token)):
     """
     return IngestionService.list_plugins()
 
+
+
+@app.get(
+    "/files/{file_id}/content",
+    summary="Get file content",
+    description="Get the content of a file from the collection",
+    tags=["Files"],
+    responses={
+        200: {"description": "File content retrieved successfully"},
+        401: {"description": "Unauthorized - Invalid or missing authentication token"},
+        404: {"description": "File not found"},
+        500: {"description": "Server error"}
+    }
+)
+async def get_file_content(
+    file_id: int,
+    token: str = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get the content of a file."""
+    from services.collections import CollectionsService
+    
+    try:
+        return CollectionsService.get_file_content(file_id, db)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        import traceback
+        print(f"Error retrieving file content: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve file content: {str(e)}"
+        )

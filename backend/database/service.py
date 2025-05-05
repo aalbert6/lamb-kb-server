@@ -16,8 +16,6 @@ from sqlalchemy import desc, asc
 from .models import Collection, Visibility
 from .connection import get_db, get_chroma_client, get_embedding_function, get_embedding_function_by_params
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 class CollectionService:
     """Service for managing collections in both SQLite and ChromaDB."""
@@ -184,7 +182,7 @@ class CollectionService:
 
         return [col.to_dict() for col in collections]
     
-  @staticmethod
+    @staticmethod
     def update_collection(
         db: Session,
         collection_id: int,
@@ -220,9 +218,9 @@ class CollectionService:
         # Disallow changing model or vendor
         current_conf = db_collection.embeddings_model or {}
         if model is not None and model != current_conf.get('model'):
-            logger.warning("Changing 'model' is not supported and will be ignored.")
+            print("Changing 'model' is not supported and will be ignored.")
         if vendor is not None and vendor != current_conf.get('vendor'):
-            logger.warning("Changing 'vendor' is not supported and will be ignored.")
+            print("Changing 'vendor' is not supported and will be ignored.")
 
         # Apply permitted updates
         if name is not None:

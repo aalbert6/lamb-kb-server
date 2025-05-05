@@ -22,7 +22,7 @@ from schemas.collection import (
     CollectionList
 )
 from database.connection import get_embedding_function
-
+from database.connection import get_chroma_client
 
 class CollectionsService:
     """Service for handling collection-related API endpoints."""
@@ -294,4 +294,83 @@ class CollectionsService:
                 detail=f"File with ID {file_id} not found"
             )
         
-        return file.to_dict() 
+        return file.to_dict()
+        
+    @staticmethod
+    def get_file_content(file_id: int, db: Session) -> Dict[str, Any]:
+        """Get the content of a file.
+        
+        Args:
+            file_id: ID of the file registry entry
+            db: Database session
+            
+        Returns:
+            Content of the file with metadata
+            
+        Raises:
+            HTTPException: If file not found or content cannot be retrieved
+        """
+        # Get file registry entry
+        file_registry = db.query(FileRegistry).filter(FileRegistry.id == file_id).first()
+        if not file_registry:
+            raise HTTPException(
+                status_code=404,
+                detail=f"File with ID {file_id} not found"
+            )
+        
+        # Get collection
+        collection = db.query(Collection).filter(Collection.id == file_registry.collection_id).first()
+        if not collection:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection with ID {file_registry.collection_id} not found"
+            )
+            
+        # Get ChromaDB client and collection
+        chroma_client = get_chroma_client()
+        chroma_collection = chroma_client.get_collection(name=collection.name)
+        
+        source = file_registry.original_filename
+        
+        # Get content from ChromaDB
+        results = chroma_collection.get(
+            where={"filename": source}, 
+            include=["documents", "metadatas"]
+        )
+
+        print(file_registry.to_dict())
+        
+
+        print(file_registry.original_filename, results["documents"])
+        # If no content in ChromaDB, raise error
+        if not results["documents"]:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No content found for file: {source}"
+            )
+        
+        # Reconstruct content from chunks
+        chunk_docs = []
+        for i, doc in enumerate(results["documents"]):
+            if i < len(results["metadatas"]) and results["metadatas"][i]:
+                metadata = results["metadatas"][i]
+                chunk_docs.append({
+                    "text": doc,
+                    "index": metadata.get("chunk_index", i),
+                    "count": metadata.get("chunk_count", 0)
+                })
+        
+        # Sort chunks by index
+        chunk_docs.sort(key=lambda x: x["index"])
+        
+        # Join all chunks
+        full_content = "\n".join(doc["text"] for doc in chunk_docs)
+        
+        return {
+            "file_id": file_id,
+            "original_filename": source,
+            "content": full_content,
+            "content_type": "markdown",  # Always set to markdown
+            "chunk_count": len(chunk_docs),
+            "timestamp": file_registry.updated_at.isoformat() if file_registry.updated_at else None
+        }

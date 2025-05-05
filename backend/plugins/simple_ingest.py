@@ -17,8 +17,9 @@ class SimpleIngestPlugin(IngestPlugin):
     """Plugin for ingesting simple text files with configurable chunking."""
     
     name = "simple_ingest"
+    kind = "file-ingest"
     description = "Ingest text files with configurable chunking options"
-    supported_file_types = {"txt", "md", "markdown", "text"}
+    supported_file_types = {"*.txt", "*.md"}
     
     def get_parameters(self) -> Dict[str, Dict[str, Any]]:
         """Get the parameters accepted by this plugin.

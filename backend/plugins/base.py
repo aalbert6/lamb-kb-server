@@ -25,6 +25,7 @@ class IngestPlugin(abc.ABC):
     
     # Plugin metadata
     name: str = "base"
+    kind: str = "base"
     description: str = "Base plugin interface"
     supported_file_types: Set[str] = set()
     
@@ -136,6 +137,7 @@ class PluginRegistry:
             {
                 "name": plugin_class.name,
                 "description": plugin_class.description,
+                "kind": plugin_class.kind,
                 "supported_file_types": list(plugin_class.supported_file_types),
                 "parameters": plugin_class().get_parameters()
             }

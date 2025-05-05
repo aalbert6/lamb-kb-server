@@ -12,6 +12,7 @@ class MarkItDownIngestPlugin(IngestPlugin):
     """Plugin for ingesting files by converting them to Markdown using MarkItDown and then applying configurable chunking."""
     
     name = "markitdown_ingest"
+    kind = "file-ingest"
     description = "Ingest various file formats by converting to Markdown using MarkItDown with configurable chunking"
 
     supported_file_types = {

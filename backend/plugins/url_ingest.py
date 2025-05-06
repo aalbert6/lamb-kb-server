@@ -4,7 +4,7 @@ URL ingestion plugin for web pages.
 This plugin handles URLs by fetching their content and processing them into chunks.
 Uses Firecrawl Python SDK for web scraping and crawling.
 Supports both cloud and local Firecrawl instances.
-Uses LangChain's RecursiveCharacterTextSplitter for text-structured based chunking.
+Uses LangChain's text splitters for text-structured based chunking.
 """
 
 import os
@@ -23,8 +23,12 @@ FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "")
 # Import Firecrawl SDK 
 from firecrawl.firecrawl import FirecrawlApp
 
-# Import LangChain text splitter
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+# Import LangChain text splitters
+from langchain_text_splitters import (
+    RecursiveCharacterTextSplitter,
+    CharacterTextSplitter,
+    TokenTextSplitter
+)
 
 # Import base plugin classes
 from .base import IngestPlugin, PluginRegistry
@@ -95,6 +99,13 @@ class URLIngestPlugin(IngestPlugin):
                 "description": "Number of units to overlap between chunks (uses LangChain default if not specified)",
                 "required": False
             },
+            "splitter_type": {
+                "type": "string",
+                "description": "Type of LangChain splitter to use",
+                "enum": ["RecursiveCharacterTextSplitter", "CharacterTextSplitter", "TokenTextSplitter"],
+                "default": "RecursiveCharacterTextSplitter",
+                "required": False
+            },
             "urls": {
                 "type": "array",
                 "description": "List of URLs to ingest",
@@ -102,16 +113,15 @@ class URLIngestPlugin(IngestPlugin):
             }
         }
     
-
-    
     def ingest(self, file_path: str, **kwargs) -> List[Dict[str, Any]]:
-        """Ingest URLs and split content into chunks using LangChain's RecursiveCharacterTextSplitter.
+        """Ingest URLs and split content into chunks using LangChain's text splitters.
         
         Args:
             file_path: Path to a text file containing URLs or a placeholder (not used)
             urls: List of URLs to ingest
             chunk_size: Size of each chunk (default: uses LangChain default)
             chunk_overlap: Number of units to overlap between chunks (default: uses LangChain default)
+            splitter_type: Type of LangChain splitter to use (default: RecursiveCharacterTextSplitter)
             
         Returns:
             A list of dictionaries, each containing:
@@ -121,9 +131,10 @@ class URLIngestPlugin(IngestPlugin):
         # Extract parameters
         chunk_size = kwargs.get("chunk_size", None)
         chunk_overlap = kwargs.get("chunk_overlap", None)
+        splitter_type = kwargs.get("splitter_type", "RecursiveCharacterTextSplitter")
         urls = kwargs.get("urls", [])
         
-        # Create parameters dict for RecursiveCharacterTextSplitter initialization
+        # Create parameters dict for splitter initialization
         splitter_params = {}
         if chunk_size is not None:
             splitter_params["chunk_size"] = chunk_size
@@ -139,8 +150,18 @@ class URLIngestPlugin(IngestPlugin):
         if isinstance(urls, str):
             urls = [urls]
         
-        # Create RecursiveCharacterTextSplitter with default or provided parameters
-        text_splitter = RecursiveCharacterTextSplitter(**splitter_params)
+        # Dynamically instantiate the selected LangChain splitter
+        try:
+            if splitter_type == "RecursiveCharacterTextSplitter":
+                text_splitter = RecursiveCharacterTextSplitter(**splitter_params)
+            elif splitter_type == "CharacterTextSplitter":
+                text_splitter = CharacterTextSplitter(**splitter_params)
+            elif splitter_type == "TokenTextSplitter":
+                text_splitter = TokenTextSplitter(**splitter_params)
+            else:
+                raise ValueError(f"Unsupported splitter type: {splitter_type}")
+        except ImportError as e:
+            raise ImportError(f"Failed to import {splitter_type}: {str(e)}")
         
         all_documents = []
         
@@ -179,7 +200,7 @@ class URLIngestPlugin(IngestPlugin):
                             "extension": "url",
                             "file_size": len(content),
                             "file_url": url,
-                            "chunking_strategy": "langchain_recursive_character"
+                            "chunking_strategy": f"langchain_{splitter_type.lower()}"
                         }
                         
                         # Add chunking parameters to metadata if provided

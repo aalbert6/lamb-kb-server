@@ -1,9 +1,20 @@
+"""
+MarkItDown ingestion plugin for various file formats.
+
+This plugin handles various file formats by converting them to Markdown using MarkItDown
+and then applying LangChain's text splitters for chunking.
+"""
+
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-# Import LangChain text splitter
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+# Import LangChain text splitters
+from langchain_text_splitters import (
+    RecursiveCharacterTextSplitter,
+    CharacterTextSplitter,
+    TokenTextSplitter
+)
 from markitdown import MarkItDown
 from .base import IngestPlugin, PluginRegistry
 
@@ -36,6 +47,13 @@ class MarkItDownIngestPlugin(IngestPlugin):
                 "type": "integer",
                 "description": "Number of units to overlap between chunks (uses LangChain default if not specified)",
                 "required": False
+            },
+            "splitter_type": {
+                "type": "string",
+                "description": "Type of LangChain splitter to use",
+                "enum": ["RecursiveCharacterTextSplitter", "CharacterTextSplitter", "TokenTextSplitter"],
+                "default": "RecursiveCharacterTextSplitter",
+                "required": False
             }
         }
     
@@ -46,6 +64,7 @@ class MarkItDownIngestPlugin(IngestPlugin):
             file_path: Path to the file to ingest
             chunk_size: Size of each chunk (default: uses LangChain default)
             chunk_overlap: Number of units to overlap between chunks (default: uses LangChain default)
+            splitter_type: Type of LangChain splitter to use (default: RecursiveCharacterTextSplitter)
             file_url: URL to access the file (default: None)
             
         Returns:
@@ -56,9 +75,10 @@ class MarkItDownIngestPlugin(IngestPlugin):
         # Extract parameters
         chunk_size = kwargs.get("chunk_size", None)
         chunk_overlap = kwargs.get("chunk_overlap", None)
+        splitter_type = kwargs.get("splitter_type", "RecursiveCharacterTextSplitter")
         file_url = kwargs.get("file_url", "")
         
-        # Create parameters dict for RecursiveCharacterTextSplitter initialization
+        # Create parameters dict for splitter initialization
         splitter_params = {}
         if chunk_size is not None:
             splitter_params["chunk_size"] = chunk_size
@@ -90,7 +110,7 @@ class MarkItDownIngestPlugin(IngestPlugin):
             "extension": file_extension,
             "file_size": file_size,
             "file_url": file_url,
-            "chunking_strategy": "langchain_recursive_character"
+            "chunking_strategy": f"langchain_{splitter_type.lower()}"
         }
         
         # Add chunking parameters to metadata if provided
@@ -99,8 +119,18 @@ class MarkItDownIngestPlugin(IngestPlugin):
         if chunk_overlap is not None:
             base_metadata["chunk_overlap"] = chunk_overlap
         
-        # Create RecursiveCharacterTextSplitter with default or provided parameters
-        text_splitter = RecursiveCharacterTextSplitter(**splitter_params)
+        # Dynamically instantiate the selected LangChain splitter
+        try:
+            if splitter_type == "RecursiveCharacterTextSplitter":
+                text_splitter = RecursiveCharacterTextSplitter(**splitter_params)
+            elif splitter_type == "CharacterTextSplitter":
+                text_splitter = CharacterTextSplitter(**splitter_params)
+            elif splitter_type == "TokenTextSplitter":
+                text_splitter = TokenTextSplitter(**splitter_params)
+            else:
+                raise ValueError(f"Unsupported splitter type: {splitter_type}")
+        except ImportError as e:
+            raise ImportError(f"Failed to import {splitter_type}: {str(e)}")
         
         # Split content into chunks using LangChain
         try:
@@ -111,13 +141,11 @@ class MarkItDownIngestPlugin(IngestPlugin):
         # Create result documents with metadata
         result = []
         for i, chunk_text in enumerate(chunks):
-            
             chunk_metadata = base_metadata.copy()
             chunk_metadata.update({
                 "chunk_index": i,
                 "chunk_count": len(chunks)
             })
-            
             result.append({
                 "text": chunk_text,
                 "metadata": chunk_metadata

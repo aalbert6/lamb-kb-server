@@ -52,6 +52,9 @@ def get_embedding_function_by_params(vendor: str, model_name: str, api_key: str 
     elif vendor == "openai":
         kwargs = {"api_key": api_key, "model_name": model_name}
         if api_endpoint:
+            # If api_endpoint ends with '/embeddings', strip it for OpenAIEmbeddingFunction
+            if api_endpoint.endswith("/embeddings"):
+                api_endpoint = api_endpoint[:-len("/embeddings")]
             kwargs["api_base"] = api_endpoint
         return OpenAIEmbeddingFunction(**kwargs)
     

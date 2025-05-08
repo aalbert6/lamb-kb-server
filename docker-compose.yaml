@@ -1,62 +1,43 @@
 version: '3.8'
+
 services:
-  # API Server 
-  kb-server:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile.server
-    container_name: lamb-kb-server
     ports:
       - "9090:9090"
-    volumes:
-      - ./backend:/app
-      - kb-data:/app/data
-      - static-files:/app/static
-      - ./backend/.env:/app/.env:ro
     environment:
-      - LAMB_API_KEY=${LAMB_API_KEY:-0p3n-w3bu!}
-      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
-      - EMBEDDINGS_VENDOR=${EMBEDDINGS_VENDOR:-local}
-      - EMBEDDINGS_APIKEY=${EMBEDDINGS_APIKEY:-}
-      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-}
-      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
-      - PYTHONWARNINGS=ignore::pydantic.PydanticDeprecatedSince211
-    restart: no
-    network_mode: "host"  # Use host networking
+      - HOME_URL=http://localhost:9090
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL}
+      - LAMB_API_KEY=0p3n-w3bu!
+      - EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - EMBEDDINGS_VENDOR=ollama
+      - EMBEDDINGS_API_ENDPOINT=http://127.0.0.1:11434
+    volumes:
+      - ./backend:/app/backend
+      - ./static:/app/static
+      - kb-data:/app/data
+    network_mode: "host"
     extra_hosts:
     - "host.docker.internal:host-gateway"
 
 
-  # Web Application
-  kb-webapp:
+  frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.webapp
-    container_name: lamb-kb-webapp
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
-      - "9091:9091"
-    volumes:
-      - ./backend:/app
-      - kb-data:/app/data
-      - static-files:/app/static
-      - ./backend/.env:/app/.env:ro
+      - "8501:8501"
     environment:
-      - LAMB_API_KEY=${LAMB_API_KEY:-0p3n-w3bu!}
-      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
-      - EMBEDDINGS_VENDOR=${EMBEDDINGS_VENDOR:-local}
-      - EMBEDDINGS_APIKEY=${EMBEDDINGS_APIKEY:-}
-      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-}
-      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
-      - PYTHONWARNINGS=ignore::pydantic.PydanticDeprecatedSince211
-      - LAMB_WEBAPP_HOST=0.0.0.0
-      - LAMB_WEBAPP_PORT=9091
-    restart: no
+      - API_BASE_URL=http://127.0.0.1:9090
+      - API_TOKEN=0p3n-w3bu!
     depends_on:
-      - kb-server
-    network_mode: "host"  # Use host networking
+      - backend
+    network_mode: "host"
     extra_hosts:
     - "host.docker.internal:host-gateway"
-
 
 volumes:
   kb-data:

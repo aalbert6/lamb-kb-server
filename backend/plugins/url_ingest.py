@@ -90,11 +90,13 @@ class URLIngestPlugin(IngestPlugin):
             "chunk_size": {
                 "type": "integer",
                 "description": "Size of each chunk (uses LangChain default if not specified)",
+                "default": 2000,
                 "required": False
             },
             "chunk_overlap": {
                 "type": "integer",
                 "description": "Number of units to overlap between chunks (uses LangChain default if not specified)",
+                "default": 200,
                 "required": False
             },
             "urls": {

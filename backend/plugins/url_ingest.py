@@ -10,6 +10,8 @@ Uses LangChain's RecursiveCharacterTextSplitter for text-structured based chunki
 import os
 import time
 from typing import Dict, List, Any, Optional
+import json
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -215,4 +217,26 @@ class URLIngestPlugin(IngestPlugin):
             raise ValueError(error_msg)
         
         print(f"INFO: [url_ingest] Completed processing for {len(urls)} URLs, generated {len(all_documents)} document chunks")
+        
+        # Write all_documents to a JSON file
+        # Use the provided file_path (which might be a placeholder) to name the output JSON file.
+        if file_path:
+            file_path_obj = Path(file_path)
+            # If file_path has an extension, append .json, otherwise just add .json
+            if file_path_obj.suffix:
+                output_file_path = file_path_obj.with_suffix(file_path_obj.suffix + '.json')
+            else:
+                output_file_path = file_path_obj.with_suffix('.json')
+        else:
+            # Fallback if file_path is empty for some reason, though it's typed as str
+            output_file_path = Path('url_ingest_output.json')
+
+        try:
+            with open(output_file_path, 'w') as f:
+                json.dump(all_documents, f, indent=4)
+            print(f"INFO: [url_ingest] Successfully wrote all URL chunks to {output_file_path}")
+        except Exception as e:
+            print(f"WARNING: [url_ingest] Failed to write URL chunks to {output_file_path}: {str(e)}")
+            # Optionally, re-raise the exception or handle it as a non-critical error
+
         return all_documents

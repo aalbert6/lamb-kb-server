@@ -7,6 +7,7 @@ This plugin handles plain text files (txt, md) with chunking using LangChain's R
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+import json
 
 # Import LangChain text splitter
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -31,11 +32,13 @@ class SimpleIngestPlugin(IngestPlugin):
         return {
             "chunk_size": {
                 "type": "integer",
-                "description": "Size of each chunk (uses LangChain default if not specified)",
+                "description": "Size of each chunk",
+                "default": 1000,
                 "required": False
             },
             "chunk_overlap": {
                 "type": "integer",
+                "default": 200,
                 "description": "Number of units to overlap between chunks (uses LangChain default if not specified)",
                 "required": False
             }
@@ -120,4 +123,14 @@ class SimpleIngestPlugin(IngestPlugin):
                 "metadata": chunk_metadata
             })
         
+        # Write the result to a JSON file
+        output_file_path = file_path_obj.with_suffix(file_path_obj.suffix + '.json')
+        try:
+            with open(output_file_path, 'w') as f:
+                json.dump(result, f, indent=4)
+            print(f"INFO: [simple_ingest] Successfully wrote chunks to {output_file_path}")
+        except Exception as e:
+            print(f"WARNING: [simple_ingest] Failed to write chunks to {output_file_path}: {str(e)}")
+            # Optionally, re-raise the exception or handle it as a non-critical error
+
         return result

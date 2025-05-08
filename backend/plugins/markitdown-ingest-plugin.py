@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+import json
 
 # Import LangChain text splitter
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -30,11 +31,13 @@ class MarkItDownIngestPlugin(IngestPlugin):
             "chunk_size": {
                 "type": "integer",
                 "description": "Size of each chunk (uses LangChain default if not specified)",
+                "default": 1000,
                 "required": False
             },
             "chunk_overlap": {
                 "type": "integer",
                 "description": "Number of units to overlap between chunks (uses LangChain default if not specified)",
+                "default": 200,
                 "required": False
             }
         }
@@ -65,6 +68,7 @@ class MarkItDownIngestPlugin(IngestPlugin):
         if chunk_overlap is not None:
             splitter_params["chunk_overlap"] = chunk_overlap
         
+        print(f"INFO: [markitdown_ingest] Splitting file {file_path} into chunks of size {chunk_size} with overlap {chunk_overlap}")
         # Get file metadata
         file_path_obj = Path(file_path)
         file_name = file_path_obj.name
@@ -123,4 +127,15 @@ class MarkItDownIngestPlugin(IngestPlugin):
                 "metadata": chunk_metadata
             })
         
+        # Write the result to a JSON file
+        output_file_path = file_path_obj.with_suffix(file_path_obj.suffix + '.json')
+        try:
+            with open(output_file_path, 'w') as f:
+                json.dump(result, f, indent=4)
+            print(f"INFO: [markitdown_ingest] Successfully wrote chunks to {output_file_path}")
+        except Exception as e:
+            print(f"WARNING: [markitdown_ingest] Failed to write chunks to {output_file_path}: {str(e)}")
+            # Optionally, re-raise the exception or handle it as a non-critical error
+            # For now, we'll just print a warning and continue
+
         return result

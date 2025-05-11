@@ -49,40 +49,44 @@ class URLIngestPlugin(IngestPlugin):
         """Initialize the plugin with Firecrawl app."""
         super().__init__()
         # Initialize Firecrawl app
-        self.firecrawl_app = self._init_firecrawl()
+        self.firecrawl_app: Optional[FirecrawlApp] = self._init_firecrawl()
     
-    def _init_firecrawl(self):
-        """Initialize Firecrawl app with explicit parameters and proper URL formatting."""
+    def _init_firecrawl(self) -> Optional[FirecrawlApp]:
+        """Initialize Firecrawl app. Returns None if configuration is incomplete for cloud or if initialization fails."""
+        api_key = FIRECRAWL_API_KEY
+        api_url = FIRECRAWL_API_URL
+        
+        # Ensure API URL has a proper scheme
+        if api_url:
+            if not (api_url.startswith('http://') or api_url.startswith('https://')):
+                api_url = f"https://{api_url}"
+                print(f"INFO: [url_ingest] Added https:// scheme to API URL: {api_url}")
+        else:
+            # Use default API URL if none provided
+            api_url = "https://api.firecrawl.dev" # Default to cloud
+            print(f"INFO: [url_ingest] FIRECRAWL_API_URL not set, using default API URL: {api_url}")
+        
+        # Check if API key is required for cloud service
+        # The default api_url is cloud, so this check is important
+        if 'api.firecrawl.dev' in api_url and not api_key:
+            print(f"INFO: [url_ingest] FIRECRAWL_API_KEY not set. API key is required for Firecrawl cloud service ({api_url}). Ingestion will fail if attempted.")
+            return None
+        
         try:
-            # Get API key and URL from environment variables
-            api_key = FIRECRAWL_API_KEY
-            api_url = FIRECRAWL_API_URL
-            
-            # Ensure API URL has a proper scheme
-            if api_url:
-                if not (api_url.startswith('http://') or api_url.startswith('https://')):
-                    api_url = f"https://{api_url}"
-                    print(f"INFO: [url_ingest] Added https:// scheme to API URL: {api_url}")
-            else:
-                # Use default API URL if none provided
-                api_url = "https://api.firecrawl.dev"
-                print(f"INFO: [url_ingest] Using default API URL: {api_url}")
-            
-            # Check if API key is required for cloud service
-            if 'api.firecrawl.dev' in api_url and not api_key:
-                print(f"ERROR: [url_ingest] No API key provided for Firecrawl cloud service")
-                raise ValueError("API key required for Firecrawl cloud service")
-            
             # Log configuration
-            print(f"INFO: [url_ingest] Initializing Firecrawl with API URL: {api_url}")
+            print(f"INFO: [url_ingest] Attempting to initialize FirecrawlApp with API URL: {api_url}")
             if api_key:
-                print(f"INFO: [url_ingest] API key is provided")
-            
-            # Initialize FirecrawlApp with explicit parameters
-            return FirecrawlApp(api_key=api_key, api_url=api_url)
+                print(f"INFO: [url_ingest] FIRECRAWL_API_KEY is provided.")
+            elif not 'api.firecrawl.dev' in api_url : # No key, and not cloud URL
+                 print(f"INFO: [url_ingest] No FIRECRAWL_API_KEY provided; assuming local Firecrawl instance or no key needed for {api_url}.")
+
+            app = FirecrawlApp(api_key=api_key, api_url=api_url)
+            print(f"INFO: [url_ingest] FirecrawlApp initialized successfully.")
+            return app
         except Exception as e:
-            print(f"ERROR: [url_ingest] Failed to initialize Firecrawl: {str(e)}")
-            raise ImportError(f"Firecrawl SDK required. Please install with: pip install firecrawl-py")
+            # This catches errors from FirecrawlApp() instantiation, e.g., SDK installed but config issue for FirecrawlApp itself
+            print(f"ERROR: [url_ingest] Failed to initialize FirecrawlApp instance: {str(e)}. Check API URL and Firecrawl server status. Ingestion will fail.")
+            return None
     
     def get_parameters(self) -> Dict[str, Dict[str, Any]]:
         """Get the parameters accepted by this plugin.
@@ -132,6 +136,10 @@ class URLIngestPlugin(IngestPlugin):
                 - text: The chunk text
                 - metadata: A dictionary of metadata for the chunk
         """
+        if not self.firecrawl_app:
+            print("ERROR: [url_ingest] Firecrawl App not initialized. This could be due to a missing API key for the cloud service, the SDK not being installed correctly, or other configuration issues during plugin initialization. Cannot ingest.")
+            raise ValueError("Firecrawl App not initialized. Please check plugin initialization logs. If using Firecrawl cloud service, ensure FIRECRAWL_API_KEY is set.")
+
         # Extract parameters
         chunk_size = kwargs.get("chunk_size", None)
         chunk_overlap = kwargs.get("chunk_overlap", None)

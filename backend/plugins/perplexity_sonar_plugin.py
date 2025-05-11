@@ -47,8 +47,8 @@ class PerplexitySonarPlugin(IngestPlugin):
     def _init_perplexity_config(self) -> Optional[Dict[str, str]]:
         """Initialize Perplexity API configuration."""
         if not PERPLEXITY_API_KEY:
-            print("ERROR: [perplexity_sonar_plugin] PERPLEXITY_API_KEY not set in environment variables.")
-            raise ValueError("PERPLEXITY_API_KEY is required for Perplexity Sonar Plugin.")
+            print("INFO: [perplexity_sonar_plugin] PERPLEXITY_API_KEY not set in environment variables. API key will be required for ingestion.")
+            return None
         
         config = {
             "api_key": PERPLEXITY_API_KEY,
@@ -117,8 +117,8 @@ class PerplexitySonarPlugin(IngestPlugin):
                 - metadata: A dictionary of metadata for the chunk.
         """
         if not self.perplexity_config:
-            print("ERROR: [perplexity_sonar_plugin] Perplexity API config not initialized. Cannot ingest.")
-            return []
+            print("ERROR: [perplexity_sonar_plugin] Perplexity API key not configured. Cannot ingest.")
+            raise ValueError("Perplexity API key not configured. Please set PERPLEXITY_API_KEY environment variable.")
 
         # Extract parameters
         query = kwargs.get("query")

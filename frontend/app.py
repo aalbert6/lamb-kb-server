@@ -102,6 +102,26 @@ class KBClient:
         response.raise_for_status()
         return response.json()
     
+    def ingest_base(self, collection_id: int, plugin_name: str, plugin_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Ingest content using a base-ingest plugin.
+        
+        Args:
+            collection_id: ID of the collection
+            plugin_name: Name of the base-ingest plugin to use
+            plugin_params: Parameters for the plugin
+            
+        Returns:
+            Result of the ingestion operation
+        """
+        url = f"{self.base_url}/collections/{collection_id}/ingest-base"
+        data = {
+            "plugin_name": plugin_name,
+            "plugin_params": plugin_params
+        }
+        response = requests.post(url, headers=self.headers, json=data)
+        response.raise_for_status()
+        return response.json()
+    
     def list_files(self, collection_id: int, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """List files in a collection."""
         url = f"{self.base_url}/collections/{collection_id}/files"
@@ -420,8 +440,8 @@ def display_collection_detail():
                 if selected_plugin.get('kind') == 'file-ingest':
                     uploaded_file = st.file_uploader("Choose a file", type=None, key=f"uploader_{collection_id}_{selected_plugin_name}")
                     ingest_button_label = "Ingest File"
-                elif selected_plugin.get('kind') == 'base-ingest': # Assuming 'base-ingest' for URL-based
-                    ingest_button_label = "Ingest URLs"
+                elif selected_plugin.get('kind') == 'base-ingest':
+                    ingest_button_label = "Process Content"
 
                 form_submitted = st.form_submit_button(ingest_button_label)
                 if form_submitted:
@@ -477,17 +497,10 @@ def display_collection_detail():
                                 st.success(f"File '{uploaded_file.name}' ingestion started: {result.get('message', 'Check status in View Files tab.')}")
                             else:
                                 st.error("Please upload a file.")
-                        elif selected_plugin.get('kind') == 'base-ingest': # Assuming 'base-ingest' for URL-based
-                            # URLs are already processed into a list in params_for_ingestion if they differ from default or are provided
-                            urls_to_ingest = params_for_ingestion.get('urls') # This will be the list or None
-                            if urls_to_ingest: # if it was added to params_for_ingestion, it means it's valid to send
-                                final_url_params = {k:v for k,v in params_for_ingestion.items() if k != 'urls'}
-                                result = client.ingest_urls(collection_id, urls_to_ingest, selected_plugin_name, final_url_params)
-                                st.success(f"URL ingestion started for {len(urls_to_ingest)} URLs: {result.get('message', 'Check status in View Files tab.')}")
-                            elif 'urls' in selected_plugin.get('parameters', {}): # urls field exists, but user input matched default (e.g. empty)
-                                 st.error("Please enter at least one URL or ensure it differs from default.")
-                            else: # No 'urls' parameter defined for this plugin, but kind is base-ingest (edge case)
-                                st.warning(f"Plugin '{selected_plugin_name}' is URL-based but has no 'urls' parameter defined for input.")
+                        elif selected_plugin.get('kind') == 'base-ingest':
+                            # For base-ingest plugins, we use the new ingest_base endpoint
+                            result = client.ingest_base(collection_id, selected_plugin_name, params_for_ingestion)
+                            st.success(f"Content processing started: {result.get('message', 'Check status in View Files tab.')}")
                         else:
                             st.warning(f"Ingestion kind '{selected_plugin.get('kind')}' not fully supported for direct submission yet.")
                         

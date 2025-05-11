@@ -81,6 +81,13 @@ class IngestURLRequest(BaseModel):
     plugin_params: Dict[str, Any] = Field({}, description="Parameters for the plugin")
 
 
+class IngestBaseRequest(BaseModel):
+    """Request to ingest content using a base-ingest plugin."""
+    
+    plugin_name: str = Field(..., description="Name of the base-ingest plugin to use")
+    plugin_params: Dict[str, Any] = Field({}, description="Parameters for the plugin")
+
+
 class DocumentMetadata(BaseModel):
     """Metadata for a document."""
     

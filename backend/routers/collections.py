@@ -21,7 +21,8 @@ from schemas.collection import (
 from schemas.ingestion import (
     IngestURLRequest, 
     AddDocumentsRequest, 
-    AddDocumentsResponse
+    AddDocumentsResponse,
+    IngestBaseRequest
 )
 from schemas.query import QueryRequest, QueryResponse
 from schemas.files import FileRegistryResponse # Assuming schemas/files.py exists or will be created
@@ -956,6 +957,211 @@ async def update_file_status(
     """
     # Use CollectionsService which is already imported
     return CollectionsService.update_file_status(file_id, status, db) 
+
+@router.post(
+    "/{collection_id}/ingest-base",
+    response_model=AddDocumentsResponse,
+    summary="Ingest content using a base-ingest plugin",
+    description="""Process and add content to a collection using a base-ingest plugin.
+    
+    This endpoint is for plugins of kind "base-ingest" that don't require file uploads.
+    Each plugin may have its own specific parameters.
+    
+    Example:
+    ```bash
+    curl -X POST 'http://localhost:9090/collections/1/ingest-base' \
+      -H 'Authorization: Bearer 0p3n-w3bu!' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "plugin_name": "url_ingest",
+        "plugin_params": {
+          "urls": ["https://example.com/page1"],
+          "chunk_size": 1000,
+          "chunk_unit": "char",
+          "chunk_overlap": 200
+        }
+      }'
+    ```
+    """,
+    tags=["Ingestion"],
+    responses={
+        200: {"description": "Content ingested successfully"},
+        400: {"description": "Invalid plugin parameters"},
+        401: {"description": "Unauthorized - Invalid or missing authentication token"},
+        404: {"description": "Collection or plugin not found"},
+        500: {"description": "Error processing content or adding to collection"}
+    }
+)
+async def ingest_base_to_collection(
+    collection_id: int,
+    request: IngestBaseRequest,
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None
+):
+    """Ingest content using a base-ingest plugin.
+    
+    Args:
+        collection_id: ID of the collection
+        request: Request with plugin name and parameters
+        db: Database session
+        background_tasks: FastAPI background tasks
+        
+    Returns:
+        Status information about the ingestion operation
+        
+    Raises:
+        HTTPException: If collection not found, plugin not found, or ingestion fails
+    """
+    try:
+        # Get collection
+        collection = db.query(Collection).filter(Collection.id == collection_id).first()
+        if not collection:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection {collection_id} not found"
+            )
+        
+        collection_name = collection.name
+        
+        # Get plugin
+        plugin_name = request.plugin_name
+        plugin = IngestionService.get_plugin(plugin_name)
+        if not plugin:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Plugin {plugin_name} not found"
+            )
+            
+        # Verify plugin kind
+        if plugin.kind != "base-ingest":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Plugin {plugin_name} is not a base-ingest plugin"
+            )
+        
+        # Create a file path for the ingestion in the same location as uploaded files
+        import os
+        from pathlib import Path
+        import uuid
+        
+        # Get the collection directory for the owner
+        collection_dir = IngestionService._get_collection_dir(collection.owner, collection_name)
+        
+        # Create a unique filename for this ingestion with .md extension
+        unique_filename = f"{uuid.uuid4().hex}.md"
+        file_path = collection_dir / unique_filename
+        
+        # Step 1: Register the ingestion in the FileRegistry with PROCESSING status
+        file_registry = IngestionService.register_file(
+            db=db,
+            collection_id=collection_id,
+            file_path=str(file_path),
+            file_url="",  # No file URL for base-ingest plugins
+            original_filename=f"{plugin_name}_{unique_filename}",
+            plugin_name=plugin_name,
+            plugin_params=request.plugin_params,
+            owner=collection.owner,
+            document_count=0,  # Will be updated after processing
+            content_type="text/markdown",
+            status=FileStatus.PROCESSING
+        )
+        
+        # Step 2: Schedule background task for processing and adding documents
+        def process_base_in_background(plugin_name: str, params: dict, 
+                                   collection_id: int, file_registry_id: int, file_path: str):
+            try:
+                # Create a new session for the background task
+                from database.connection import SessionLocal
+                db_background = SessionLocal()
+                
+                try:
+                    # Get the plugin instance
+                    plugin = IngestionService.get_plugin(plugin_name)
+                    if not plugin:
+                        print(f"ERROR: [background_task] Plugin {plugin_name} not found.")
+                        IngestionService.update_file_status(
+                            db_background, file_registry_id, FileStatus.FAILED
+                        )
+                        return
+
+                    # Call plugin.ingest() directly
+                    print(f"DEBUG: [background_task] Calling {plugin_name}.ingest() for file: {file_path} with params: {params}")
+                    documents = plugin.ingest(file_path=file_path, **params)
+                    print(f"DEBUG: [background_task] {plugin_name}.ingest() returned {len(documents)} chunks.")
+                    
+                    # Add documents to collection
+                    result = IngestionService.add_documents_to_collection(
+                        db=db_background,
+                        collection_id=collection_id,
+                        documents=documents
+                    )
+                    
+                    # Update file registry with completed status and document count
+                    IngestionService.update_file_status(
+                        db=db_background, 
+                        file_id=file_registry_id, 
+                        status=FileStatus.COMPLETED
+                    )
+                    
+                    # Update document count
+                    file_reg = db_background.query(FileRegistry).filter(FileRegistry.id == file_registry_id).first()
+                    if file_reg:
+                        file_reg.document_count = len(documents)
+                        db_background.commit()
+                    
+                finally:
+                    db_background.close()
+                    
+            except Exception as e:
+                print(f"ERROR: [background_task] Failed to process content: {str(e)}")
+                # Update file status to FAILED
+                try:
+                    from database.connection import SessionLocal
+                    db_error = SessionLocal()
+                    try:
+                        IngestionService.update_file_status(
+                            db=db_error, 
+                            file_id=file_registry_id, 
+                            status=FileStatus.FAILED
+                        )
+                    finally:
+                        db_error.close()
+                except Exception as task_e:
+                    print(f"ERROR: [background_task] Could not update file status to FAILED: {str(task_e)}")
+        
+        # Add the task to background tasks
+        background_tasks.add_task(
+            process_base_in_background, 
+            plugin_name, 
+            request.plugin_params, 
+            collection_id, 
+            file_registry.id,
+            str(file_path)
+        )
+        
+        # Return immediate response
+        return {
+            "collection_id": collection_id,
+            "collection_name": collection_name,
+            "documents_added": 0,  # Initially 0 since processing will happen in background
+            "success": True,
+            "file_path": str(file_path),
+            "file_url": "",
+            "original_filename": f"{plugin_name}_{unique_filename}",
+            "plugin_name": plugin_name,
+            "file_registry_id": file_registry.id,
+            "status": "processing"
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        # Log the exception for debugging
+        import traceback
+        print(f"ERROR: [ingest_base_to_collection] Unexpected error: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while ingesting content."
+        )
 
 
 

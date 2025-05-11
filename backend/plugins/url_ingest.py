@@ -121,7 +121,7 @@ class URLIngestPlugin(IngestPlugin):
         """Ingest URLs and split content into chunks using LangChain's text splitters.
         
         Args:
-            file_path: Path to a text file containing URLs or a placeholder (not used)
+            file_path: Path to write the processed content
             urls: List of URLs to ingest
             chunk_size: Size of each chunk (default: uses LangChain default)
             chunk_overlap: Number of units to overlap between chunks (default: uses LangChain default)
@@ -168,6 +168,8 @@ class URLIngestPlugin(IngestPlugin):
             raise ImportError(f"Failed to import {splitter_type}: {str(e)}")
         
         all_documents = []
+        # To store raw markdown content from all URLs concatenated
+        combined_markdown_content = ""
         
         # Always use batch processing, even for a single URL
         print(f"INFO: [url_ingest] Starting batch scrape for {len(urls)} URLs")
@@ -194,6 +196,10 @@ class URLIngestPlugin(IngestPlugin):
                         content = result["markdown"]
                         content_length = len(content)
                         print(f"INFO: [url_ingest] URL {url} content extracted: {content_length} chars")
+                        # Append content from this URL to the combined string
+                        if combined_markdown_content: # Add a separator if not the first content
+                            combined_markdown_content += "\n\n---\n\n" # Markdown horizontal rule as separator
+                        combined_markdown_content += content
                     
                     if content:
                         print(f"INFO: [url_ingest] Processing content for URL: {url}")
@@ -241,25 +247,13 @@ class URLIngestPlugin(IngestPlugin):
         
         print(f"INFO: [url_ingest] Completed processing for {len(urls)} URLs, generated {len(all_documents)} document chunks")
         
-        # Write all_documents to a JSON file
-        # Use the provided file_path (which might be a placeholder) to name the output JSON file.
-        if file_path:
-            file_path_obj = Path(file_path)
-            # If file_path has an extension, append .json, otherwise just add .json
-            if file_path_obj.suffix:
-                output_file_path = file_path_obj.with_suffix(file_path_obj.suffix + '.json')
-            else:
-                output_file_path = file_path_obj.with_suffix('.json')
-        else:
-            # Fallback if file_path is empty for some reason, though it's typed as str
-            output_file_path = Path('url_ingest_output.json')
-
+        # Write combined_markdown_content to the provided file path
         try:
-            with open(output_file_path, 'w') as f:
-                json.dump(all_documents, f, indent=4)
-            print(f"INFO: [url_ingest] Successfully wrote all URL chunks to {output_file_path}")
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(combined_markdown_content)
+            print(f"INFO: [url_ingest] Successfully wrote combined markdown content from {len(urls)} URLs to {file_path}")
         except Exception as e:
-            print(f"WARNING: [url_ingest] Failed to write URL chunks to {output_file_path}: {str(e)}")
+            print(f"WARNING: [url_ingest] Failed to write combined markdown content to {file_path}: {str(e)}")
             # Optionally, re-raise the exception or handle it as a non-critical error
 
         return all_documents

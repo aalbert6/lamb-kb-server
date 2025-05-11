@@ -314,9 +314,9 @@ async def get_collection(
 
     Example:
     ```bash
-    curl -X POST 'http://localhost:9090/collections/1/ingest-url' \
-      -H 'Authorization: Bearer 0p3n-w3bu!' \
-      -H 'Content-Type: application/json' \
+    curl -X POST 'http://localhost:9090/collections/1/ingest-url' \\
+      -H 'Authorization: Bearer 0p3n-w3bu!' \\
+      -H 'Content-Type: application/json' \\
       -d '{
         "urls": ["https://example.com/page1", "https://example.com/page2"],
         "plugin_params": {
@@ -367,60 +367,37 @@ async def ingest_url_to_collection(
     Raises:
         HTTPException: If collection not found, plugin not found, or ingestion fails
     """
-    # Check if collection exists in SQLite
-    collection = CollectionService.get_collection(db, collection_id)
-    if not collection:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Collection with ID {collection_id} not found in database"
-        )
-        
-    # Get collection name - handle both dict-like and attribute access
-    collection_name = collection['name'] if isinstance(collection, dict) else collection.name
-        
-    # Also verify ChromaDB collection exists
     try:
-        chroma_client = get_chroma_client()
-        chroma_collection = chroma_client.get_collection(name=collection_name)
-    except Exception as e:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Collection '{collection_name}' exists in database but not in ChromaDB. Please recreate the collection."
-        )
-    
-    # Get and validate the collection using the helper
-    collection, collection_name = _get_and_validate_collection(db, collection_id)
-    
-    # Check if plugin exists
-    plugin_name = request.plugin_name
-    plugin = IngestionService.get_plugin(plugin_name)
-    if not plugin:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Ingestion plugin '{plugin_name}' not found"
-        )
-    
-    # Check if URLs are provided
-    if not request.urls:
-        raise HTTPException(
-            status_code=400,
-            detail="No URLs provided"
-        )
-    
-    try:
-        # Create a temporary file to track this URL ingestion
-        import tempfile
-        import uuid
+        # Get collection
+        collection = db.query(Collection).filter(Collection.id == collection_id).first()
+        if not collection:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection {collection_id} not found"
+            )
+        
+        collection_name = collection.name
+        
+        # Get plugin
+        plugin_name = request.plugin_name
+        plugin = IngestionService.get_plugin(plugin_name)
+        if not plugin:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Plugin {plugin_name} not found"
+            )
+        
+        # Create a file path for the URL ingestion in the same location as uploaded files
         import os
+        from pathlib import Path
+        import uuid
         
-        temp_dir = os.path.join(tempfile.gettempdir(), "url_ingestion")
-        os.makedirs(temp_dir, exist_ok=True)
-        temp_file_path = os.path.join(temp_dir, f"{uuid.uuid4().hex}.url")
+        # Get the collection directory for the owner
+        collection_dir = IngestionService._get_collection_dir(collection.owner, collection_name)
         
-        # Write URLs to the temporary file (just for tracking)
-        with open(temp_file_path, "w") as f:
-            for url in request.urls:
-                f.write(f"{url}\n")
+        # Create a unique filename for this ingestion with .md extension
+        unique_filename = f"{uuid.uuid4().hex}.md"
+        file_path = collection_dir / unique_filename
         
         # Step 1: Register the URL ingestion in the FileRegistry with PROCESSING status
         # Store the first URL as the filename to make it easier to display and preview
@@ -428,41 +405,47 @@ async def ingest_url_to_collection(
         file_registry = IngestionService.register_file(
             db=db,
             collection_id=collection_id,
-            file_path=temp_file_path,
+            file_path=str(file_path),
             file_url=first_url,  # Store the URL for direct access
             original_filename=first_url,  # Use the first URL as the original filename for better display
             plugin_name="url_ingest",  # Ensure consistent plugin name
             plugin_params={"urls": request.urls, **request.plugin_params},
-            owner=collection["owner"] if isinstance(collection, dict) else collection.owner,
+            owner=collection.owner,
             document_count=0,  # Will be updated after processing
-            content_type="text/plain",
+            content_type="text/markdown", # Changed from application/json
             status=FileStatus.PROCESSING  # Set initial status to PROCESSING
         )
         
         # Step 2: Schedule background task for processing and adding documents
         def process_urls_in_background(urls: List[str], plugin_name: str, params: dict, 
-                                   collection_id: int, file_registry_id: int):
+                                   collection_id: int, file_registry_id: int, file_path: str):
             try:
                 # Create a new session for the background task
                 from database.connection import SessionLocal
                 db_background = SessionLocal()
                 
                 try:
-                    # Make a placeholder file path for the URL ingestion
-                    import tempfile
-                    temp_file = tempfile.NamedTemporaryFile(delete=False)
-                    temp_file_path = temp_file.name
-                    temp_file.close()
+                    # Get the plugin instance
+                    plugin = IngestionService.get_plugin(plugin_name)
+                    if not plugin:
+                        # This should ideally not happen if already checked in the main thread,
+                        # but good to have a safeguard.
+                        print(f"ERROR: [background_task] Plugin {plugin_name} not found.")
+                        # Update file status to FAILED directly here or raise an exception
+                        # that the outer except block can catch to set status to FAILED.
+                        IngestionService.update_file_status(
+                            db_background, file_registry_id, FileStatus.FAILED
+                        )
+                        return
+
+                    # For url_ingest, call plugin.ingest() directly as it creates the file.
+                    # The `file_path` is where the plugin will write the content.
+                    # The `params` should contain `urls` and other chunking parameters.
+                    full_params = {**params, "urls": urls} # Ensure 'urls' is in params for the plugin
                     
-                    # Step 2.1: Process URLs with plugin
-                    # Add URLs to the plugin parameters
-                    full_params = {**params, "urls": urls}
-                    
-                    documents = IngestionService.ingest_file(
-                        file_path=temp_file_path,  # This is just a placeholder
-                        plugin_name=plugin_name,
-                        plugin_params=full_params
-                    )
+                    print(f"DEBUG: [background_task] Calling {plugin_name}.ingest() directly for file: {file_path} with params: {full_params}")
+                    documents = plugin.ingest(file_path=file_path, **full_params)
+                    print(f"DEBUG: [background_task] {plugin_name}.ingest() returned {len(documents)} chunks.")
                     
                     # Step 2.2: Add documents to collection
                     result = IngestionService.add_documents_to_collection(
@@ -484,18 +467,11 @@ async def ingest_url_to_collection(
                         file_reg.document_count = len(documents)
                         db_background.commit()
                     
-                    # Clean up the temporary file
-                    try:
-                        os.unlink(temp_file_path)
-                    except:
-                        pass
-                    
                 finally:
                     db_background.close()
                     
             except Exception as e:
                 print(f"ERROR: [background_task] Failed to process URLs: {str(e)}")
-                
                 # Update file status to FAILED
                 try:
                     from database.connection import SessionLocal
@@ -508,8 +484,8 @@ async def ingest_url_to_collection(
                         )
                     finally:
                         db_error.close()
-                except Exception:
-                    print(f"ERROR: [background_task] Could not update file status to FAILED")
+                except Exception as task_e: # Changed variable name to avoid conflict
+                    print(f"ERROR: [background_task] Could not update file status to FAILED: {str(task_e)}")
         
         # Add the task to background tasks
         background_tasks.add_task(
@@ -518,7 +494,8 @@ async def ingest_url_to_collection(
             plugin_name, 
             request.plugin_params, 
             collection_id, 
-            file_registry.id
+            file_registry.id,
+            str(file_path)
         )
         
         # Return immediate response with URL information
@@ -527,7 +504,7 @@ async def ingest_url_to_collection(
             "collection_name": collection_name,
             "documents_added": 0,  # Initially 0 since processing will happen in background
             "success": True,
-            "file_path": temp_file_path,
+            "file_path": str(file_path),
             "file_url": "",
             "original_filename": f"urls_{len(request.urls)}",
             "plugin_name": plugin_name,
@@ -537,9 +514,13 @@ async def ingest_url_to_collection(
     except HTTPException as e:
         raise e
     except Exception as e:
+        # Log the exception for debugging
+        import traceback
+        print(f"ERROR: [ingest_url_to_collection] Unexpected error: {str(e)}\\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to ingest URLs: {str(e)}"
+            # Provide a more generic message to the client for unexpected errors
+            detail="An unexpected error occurred while ingesting URLs."
         )
 
 

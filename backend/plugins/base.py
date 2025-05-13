@@ -70,6 +70,14 @@ class PluginRegistry:
         Returns:
             The registered plugin class (for decorator use)
         """
+
+        env_var_name = f"PLUGIN_{plugin_class.name.upper()}"
+        env_var_value = os.getenv(env_var_name, "ENABLE").upper()
+        print(f"DEBUG: Checking {env_var_name}={env_var_value}")
+        if env_var_value == "DISABLE":
+            print(f"INFO: Plugin {plugin_class.name} is disabled via {env_var_name}=DISABLE")
+            return plugin_class 
+
         if issubclass(plugin_class, IngestPlugin):
             plugin_name = plugin_class.name
             cls._ingest_plugins[plugin_name] = plugin_class

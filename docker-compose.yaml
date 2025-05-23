@@ -20,9 +20,6 @@ services:
       - ./backend:/app/backend
       - ./static:/app/static
       - kb-data:/app/data
-    network_mode: "host"
-    extra_hosts:
-    - "host.docker.internal:host-gateway"
 
 
   frontend:

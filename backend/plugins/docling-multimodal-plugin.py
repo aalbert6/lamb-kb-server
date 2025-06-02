@@ -102,7 +102,10 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
         paragraphs = markdown.split("\n\n")
 
         if chunk_strategy == "fixed":
-            for i in range(0, len(paragraphs), chunk_size):
+            step = chunk_size - overlap
+            if step <= 0:
+                raise ValueError("Chunk size must be greater than overlap size.")
+            for i in range(0, len(paragraphs), step):
                 chunk_text = "\n\n".join(paragraphs[i:i + chunk_size])
                 if not chunk_text.strip():
                     continue

@@ -10,27 +10,22 @@ class CLIPEmbeddingFunction:
         self.model = CLIPModel.from_pretrained(model_name).to(self.device)
         self.processor = CLIPProcessor.from_pretrained(model_name)
 
-    def __call__(self, inputs):
-        """Genera els embeddings per a un conjunt de textos, taules i imatges.
-        
-           Args:
-                inputs (dict): Un diccionari que pot contenir claus 'text', 'tables' i 'images'.
-            
-           Returns:
-                embeddings (dict): Un diccionari amb els embeddings per a cada tipus d'input.
-        """
+    def __call__(self, input):
         embeddings = []
-        
-        for item in inputs:
-            if isinstance(item, str) and os.path.exists(item):
-                image = Image.open(item).convert("RGB")
-                inputs = self.processor(images=image, return_tensors="pt").to(self.device)
-                features = self.model.get_image_features(**inputs)
-            else:
-                inputs = self.processor(text=item, return_tensors="pt", paddindg=True).to(self.device)
-                features = self.model.get_text_features(**inputs)
 
-            features = features.detach().cpu().numpy().tolist()
-            embeddings.append(features[0])
+        for item in input:
+            try:
+                if os.path.exists(item):
+                    image = Image.open(item).convert("RGB")
+                    proc_inputs = self.processor(images=image, return_tensors="pt").to(self.device)
+                    features = self.model.get_image_features(**proc_inputs)
+                else:
+                    proc_inputs = self.processor(text=item, return_tensors="pt", padding=True, truncation=True).to(self.device)
+                    features = self.model.get_text_features(**proc_inputs)
 
+                features = features.detach().cpu().numpy().tolist()
+                embeddings.append(features[0])
+            except Exception as e:
+                print(f"Error procesando input {item}: {e}")
+                embeddings.append([0.0] * self.model.config.projection_dim)
         return embeddings

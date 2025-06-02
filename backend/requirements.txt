@@ -19,3 +19,6 @@ uuid>=1.30
 markdown2
 torch
 Pillow
+pymupdf
+docling
+openai

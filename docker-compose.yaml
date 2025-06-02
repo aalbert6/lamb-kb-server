@@ -7,14 +7,16 @@ services:
       dockerfile: Dockerfile.server
     ports:
       - "9090:9090"
+    env_file:
+      - backend/.env
     environment:
       - HOME_URL=http://localhost:9090
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
       - FIRECRAWL_API_URL=${FIRECRAWL_API_URL}
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
       - LAMB_API_KEY=0p3n-w3bu!
-      - EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
-      - EMBEDDINGS_VENDOR=ollama
+      - EMBEDDINGS_MODEL=openai/clip-vit-base-patch32
+      - EMBEDDINGS_VENDOR=huggingface
       - EMBEDDINGS_API_ENDPOINT=http://127.0.0.1:11434
     volumes:
       - ./backend:/app/backend

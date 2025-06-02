@@ -80,17 +80,19 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
             "overlap": overlap,
             "max_pages": max_pages
         }
+        converter = DocumentConverter()
 
         with open(file_path, "rb") as f:
             file_bytes = f.read()
-
-        converter = DocumentConverter()
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
             temp_pdf.write(file_bytes)
             temp_pdf.flush()
 
-            result = converter.convert(temp_pdf.name, ocr, chunk_size, overlap, chunk_strategy, max_pages, language)
+            result = converter.convert(
+                source=temp_pdf.name,
+                max_num_pages=max_pages
+            )
             markdown = result.document.export_to_markdown()
 
         paragraphs = markdown.split("\n\n")

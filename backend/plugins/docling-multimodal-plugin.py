@@ -63,6 +63,10 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
         max_pages = kwargs.get("max_pages", 100)
         language = kwargs.get("language", "en")
         file_url = kwargs.get("file_url", "")
+        VALID_STRATEGIES = ["semantic", "fixed"]
+
+        if chunk_strategy not in VALID_STRATEGIES:
+            raise ValueError(f"Invalid chunk_strategy: {chunk_strategy}. Supported strategies: {VALID_STRATEGIES}")
 
         chunks = []
         common_metadata = {
@@ -97,24 +101,58 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
 
         paragraphs = markdown.split("\n\n")
 
-        for i in range(0, len(paragraphs), chunk_size):
-            chunk_text = "\n\n".join(paragraphs[i:i + chunk_size])
-            if not chunk_text.strip():
-                continue
+        if chunk_strategy == "fixed":
+            for i in range(0, len(paragraphs), chunk_size):
+                chunk_text = "\n\n".join(paragraphs[i:i + chunk_size])
+                if not chunk_text.strip():
+                    continue
 
-            chunk = {
-                "text": chunk_text,
-                "metadata": {
-                    **common_metadata,
-                    "type": "text",
-                    "chunk_index": i // chunk_size
+                chunk = {
+                    "text": chunk_text,
+                    "metadata": {
+                        **common_metadata,
+                        "type": "text",
+                        "chunk_index": i // chunk_size
+                    }
                 }
-            }
-            chunks.append(chunk)
-        
+                chunks.append(chunk)
+        elif chunk_strategy == "semantic":
+            chunk = []
+            current_length = 0
+            chunk_idx = 0
+
+            for p in paragraphs:
+                if not p.strip():
+                    continue
+                chunk.append(p)
+                current_length += len(p.split())
+                if current_length >= chunk_size:
+                    chunk_text = "\n\n".join(chunk)
+                    chunks.append({
+                        "text": chunk_text,
+                        "metadata": {
+                            **common_metadata,
+                            "type": "text",
+                            "chunk_index": chunk_idx
+                        }
+                    })
+                    chunk_idx += 1
+                    chunk = []
+                    current_length = 0
+                if chunk:
+                    chunk_text = "\n\n".join(chunk)
+                    chunks.append({
+                        "text": chunk_text,
+                        "metadata": {
+                            **common_metadata,
+                            "type": "text",
+                            "chunk_index": chunk_idx
+                        }
+                    })
+
         if include_images:
             doc = fitz.open(file_path)
-            
+
             for page_index in range(min(len(doc), max_pages)):
                 page = doc[page_index]
                 img_info = page.get_images(full=True)

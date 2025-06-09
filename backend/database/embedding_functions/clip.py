@@ -9,6 +9,7 @@ class CLIPEmbeddingFunction:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = CLIPModel.from_pretrained(model_name).to(self.device)
         self.processor = CLIPProcessor.from_pretrained(model_name)
+        self._name = "clip"
 
     def __call__(self, input):
         embeddings = []
@@ -29,3 +30,6 @@ class CLIPEmbeddingFunction:
                 print(f"Error procesando input {item}: {e}")
                 embeddings.append([0.0] * self.model.config.projection_dim)
         return embeddings
+
+    def name(self):
+        return self._name

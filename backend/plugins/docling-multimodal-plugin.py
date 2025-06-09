@@ -7,7 +7,7 @@ from docling.document_converter import DocumentConverter
 
 @PluginRegistry.register
 class DoclingMultimodalIngestPlugin(IngestPlugin):
-    
+
     # Plugin metadata
     name = "docling_multimodal"
     kind = "file-ingest"

@@ -68,6 +68,9 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
         if chunk_strategy not in VALID_STRATEGIES:
             raise ValueError(f"Invalid chunk_strategy: {chunk_strategy}. Supported strategies: {VALID_STRATEGIES}")
 
+        file_path_obj = Path(file_path)
+        file_name = file_path_obj.name
+
         chunks = []
         common_metadata = {
             "source": file_path,
@@ -78,6 +81,7 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
             "chunk_size": chunk_size,
             "language": language,
             "ocr_enabled": ocr,
+            "file_name": file_name,
             "file_url": file_url,
             "original_filename": os.path.basename(file_path),
             "include_images": include_images,
@@ -155,6 +159,14 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
 
         if include_images:
             doc = fitz.open(file_path)
+            pdf_path = Path(file_path)
+            data_dir = pdf_path.parent
+            pdf_stem = Path(kwargs.get("original_filename", pdf_path.stem)).stem
+            print(f"Processing PDF: {pdf_path} with stem: {pdf_stem}")
+            # Ruta correcta: dentro de data_dir, subcarpeta images/
+            img_output_dir = Path(data_dir) / "images" / f"imatges_{pdf_stem}"
+            print(f"data_dir: {data_dir} ")
+            img_output_dir.mkdir(parents=True, exist_ok=True)
 
             for page_index in range(min(len(doc), max_pages)):
                 page = doc[page_index]
@@ -166,21 +178,31 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                     img_bytes = base_img["image"]
                     ext = base_img["ext"]
                     filename = f"image_{page_index}_{img_index}.{ext}"
-                    image_path = os.path.join("imatges", filename)
+                    image_path = img_output_dir / filename
 
-                    os.makedirs(os.path.dirname(image_path), exist_ok=True)
-                    with open(image_path, "wb") as img:
-                        img.write(img_bytes)
+                    try:
+                        with open(image_path, "wb") as f:
+                            print(f"Guardando imagen en: {image_path}")
+                            f.write(img_bytes)
+                    except Exception as e:
+                        print(f"ERROR al guardar la imagen {filename}: {e}")
+
+                    try:
+                        relative_url = image_path.relative_to(Path("static").resolve())
+                        image_url = f"/static/{relative_url}"
+                    except ValueError:
+                        image_url = f"/static/{image_path}"
 
                     image_chunk = {
-                        "text": image_path,
+                        "text": f"Imatge extreta de la pàgina {page_index + 1}, imatge {img_index + 1}.",
                         "metadata": {
                             **common_metadata,
                             "type": "imatge",
-                            "image_path": image_path, 
+                            "image_path": image_url,
                             "page_index": page_index,
                             "image_index": img_index
                         }
                     }
                     chunks.append(image_chunk)
+
         return chunks

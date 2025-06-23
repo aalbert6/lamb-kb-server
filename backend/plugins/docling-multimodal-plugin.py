@@ -104,6 +104,9 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
             markdown = result.document.export_to_markdown()
 
         paragraphs = markdown.split("\n\n")
+        chunk_idx = 0
+
+        image_refs = []
 
         if chunk_strategy == "fixed":
             step = chunk_size - overlap
@@ -114,20 +117,27 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                 if not chunk_text.strip():
                     continue
 
+                has_image = "<!-- image -->" in chunk_text
+                if has_image:
+                    num_refs = chunk_text.count("<!-- image -->")
+                    image_refs.extend([chunk_idx] * num_refs)
+
                 chunk = {
                     "text": chunk_text,
                     "metadata": {
                         **common_metadata,
                         "type": "text",
-                        "chunk_index": i // chunk_size
+                        "chunk_index": chunk_idx,
+                        "has_image": has_image,
+                        "linked_images": ""
                     }
                 }
                 chunks.append(chunk)
+                chunk_idx += 1
+
         elif chunk_strategy == "semantic":
             chunk = []
             current_length = 0
-            chunk_idx = 0
-
             for p in paragraphs:
                 if not p.strip():
                     continue
@@ -135,38 +145,52 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                 current_length += len(p.split())
                 if current_length >= chunk_size:
                     chunk_text = "\n\n".join(chunk)
+                    has_image = "<!-- image -->" in chunk_text
+                    if has_image:
+                        num_refs = chunk_text.count("<!-- image -->")
+                        image_refs.extend([chunk_idx] * num_refs)
+
                     chunks.append({
                         "text": chunk_text,
                         "metadata": {
                             **common_metadata,
                             "type": "text",
-                            "chunk_index": chunk_idx
+                            "chunk_index": chunk_idx,
+                            "has_image": has_image,
+                            "linked_images": ""
                         }
                     })
                     chunk_idx += 1
                     chunk = []
                     current_length = 0
-                if chunk:
-                    chunk_text = "\n\n".join(chunk)
-                    chunks.append({
-                        "text": chunk_text,
-                        "metadata": {
-                            **common_metadata,
-                            "type": "text",
-                            "chunk_index": chunk_idx
-                        }
-                    })
+            if chunk:
+                chunk_text = "\n\n".join(chunk)
+                has_image = "<!-- image -->" in chunk_text
+                if has_image:
+                    num_refs = chunk_text.count("<!-- image -->")
+                    image_refs.extend([chunk_idx] * num_refs)
 
+                chunks.append({
+                    "text": chunk_text,
+                    "metadata": {
+                        **common_metadata,
+                        "type": "text",
+                        "chunk_index": chunk_idx,
+                        "has_image": has_image,
+                        "linked_images": ""
+                    }
+                })
+
+        # Procesamiento de imágenes
         if include_images:
             doc = fitz.open(file_path)
             pdf_path = Path(file_path)
             data_dir = pdf_path.parent
             pdf_stem = Path(kwargs.get("original_filename", pdf_path.stem)).stem
-            print(f"Processing PDF: {pdf_path} with stem: {pdf_stem}")
-            # Ruta correcta: dentro de data_dir, subcarpeta images/
             img_output_dir = Path(data_dir) / "images" / f"imatges_{pdf_stem}"
-            print(f"data_dir: {data_dir} ")
             img_output_dir.mkdir(parents=True, exist_ok=True)
+
+            ref_index = 0
 
             for page_index in range(min(len(doc), max_pages)):
                 page = doc[page_index]
@@ -182,7 +206,6 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
 
                     try:
                         with open(image_path, "wb") as f:
-                            print(f"Guardando imagen en: {image_path}")
                             f.write(img_bytes)
                     except Exception as e:
                         print(f"ERROR al guardar la imagen {filename}: {e}")
@@ -193,6 +216,13 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                     except ValueError:
                         image_url = f"/static/{image_path}"
 
+                    linked_chunk_index = image_refs[ref_index] if ref_index < len(image_refs) else None
+                    if linked_chunk_index is not None:
+                        for chunk in chunks:
+                            if chunk["metadata"]["chunk_index"] == linked_chunk_index:
+                                chunk["metadata"]["linked_images"] = image_url
+                                break
+
                     image_chunk = {
                         "text": f"Imatge extreta de la pàgina {page_index + 1}, imatge {img_index + 1}.",
                         "metadata": {
@@ -200,9 +230,11 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                             "type": "imatge",
                             "image_path": image_url,
                             "page_index": page_index,
-                            "image_index": img_index
+                            "image_index": img_index,
+                            "linked_text_chunk": linked_chunk_index
                         }
                     }
                     chunks.append(image_chunk)
+                    ref_index += 1
 
         return chunks

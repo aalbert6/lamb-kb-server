@@ -3,6 +3,8 @@ from typing import Dict, Any, List
 from pathlib import Path
 import os, tempfile, fitz
 from docling.document_converter import DocumentConverter
+from docling_core.types.doc import PictureItem
+
 
 
 @PluginRegistry.register
@@ -53,6 +55,18 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                 "description": "Idioma del contingut a processar. Utilitzat per a OCR i models de llenguatge."
             }
         }
+
+    def extract_picture_ocr(self, picture: PictureItem, document) -> str:
+        """Extrae el OCR (si existe) de los children de un PictureItem"""
+        if not picture.children:
+            return ""
+        ocr_parts = []
+        for child in picture.children:
+            cref = child.cref
+            index = int(cref.split("/")[-1]) if cref.startswith("#/texts/") else None
+            if index is not None and 0 <= index < len(document.texts):
+                ocr_parts.append(document.texts[index].text)
+        return "\n".join(ocr_parts).strip()
 
     def ingest(self, file_path: str, **kwargs) -> List[Dict[str, Any]]:
         chunk_size = kwargs.get("chunk_size", 512)
@@ -191,11 +205,10 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
             img_output_dir.mkdir(parents=True, exist_ok=True)
 
             ref_index = 0
-
+            picture_counter = 0
             for page_index in range(min(len(doc), max_pages)):
                 page = doc[page_index]
                 img_info = page.get_images(full=True)
-
                 for img_index, img in enumerate(img_info):
                     xref = img[0]
                     base_img = doc.extract_image(xref)
@@ -203,6 +216,12 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                     ext = base_img["ext"]
                     filename = f"image_{page_index}_{img_index}.{ext}"
                     image_path = img_output_dir / filename
+                    if ocr and picture_counter < len(result.document.pictures):
+                        ocr_text = self.extract_picture_ocr(result.document.pictures[picture_counter], result.document) if ocr else ""
+                    else:
+                        ocr_text = ""
+
+                    picture_counter += 1
 
                     try:
                         with open(image_path, "wb") as f:
@@ -228,13 +247,29 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                         "metadata": {
                             **common_metadata,
                             "type": "imatge",
+                            "chunk_index": chunk_idx,
                             "image_path": image_url,
                             "page_index": page_index,
                             "image_index": img_index,
-                            "linked_text_chunk": linked_chunk_index
+                            "linked_text_chunk": str(linked_chunk_index) if linked_chunk_index is not None else "",
+                            "ocr_text": ocr_text
                         }
                     }
                     chunks.append(image_chunk)
+                    chunk_idx += 1
                     ref_index += 1
+
+        for image_chunk in chunks:
+            if image_chunk["metadata"].get("type") == "imatge":
+                linked_idx = image_chunk["metadata"].get("linked_text_chunk")
+                if linked_idx is not None and linked_idx != "":
+                    for text_chunk in chunks:
+                        if (
+                            text_chunk["metadata"].get("type") == "text"
+                            and text_chunk["metadata"].get("chunk_index") == int(linked_idx)
+                        ):
+                            text_chunk["metadata"]["related_image_chunk"] = image_chunk["metadata"]["chunk_index"]
+                            text_chunk["metadata"]["related_image_ocr"] = image_chunk["metadata"].get("ocr_text", "")
+                            break
 
         return chunks

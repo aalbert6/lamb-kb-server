@@ -23,6 +23,9 @@ COPY backend/ .
 # Crea carpeta de estáticos
 RUN mkdir -p static
 
+# Crea carpeta de modelos de EasyOCR
+RUN mkdir -p /root/.EasyOCR/model
+
 # Crea archivo .env vacío si no existe
 RUN touch .env
 

@@ -27,7 +27,7 @@ class DoclingMultimodalIngestPlugin(IngestPlugin):
                 "type": "enum",
                 "default": "semantic",
                 "description": "Estrategia de fragmentació a utilitzar.",
-                "options": ["semantic", "fixed", "layout", "image"]
+                "options": ["semantic", "fixed"]
             },
             "overlap": {
                 "type": "integer",

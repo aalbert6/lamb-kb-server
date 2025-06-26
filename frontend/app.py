@@ -244,7 +244,7 @@ def display_collections_list():
             st.caption("Specify 'default' to use server-configured environment variables for model, vendor, endpoint, or API key.")
             
             embed_model_name = st.text_input("Model Name", value="default", help="e.g., sentence-transformers/all-MiniLM-L6-v2, text-embedding-3-small, or 'default'")
-            embed_vendor = st.selectbox("Vendor", ["default", "local", "openai", "ollama", "clip"], index=0, help="e.g., 'local', 'openai', 'ollama', or 'default'")
+            embed_vendor = st.selectbox("Vendor", ["default", "local", "openai", "ollama", "clip"], index=0, help="e.g., 'local', 'openai', 'clip', 'ollama', or 'default'")
             embed_api_endpoint = st.text_input("API Endpoint (Optional)", value="default", help="e.g., http://localhost:11434 for Ollama, or 'default'")
             embed_apikey = st.text_input("API Key (Optional)", type="password", value="default", help="Required for some vendors like OpenAI, or 'default'")
 

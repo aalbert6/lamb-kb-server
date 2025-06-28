@@ -243,10 +243,10 @@ def display_collections_list():
             st.subheader("Embedding Configuration")
             st.caption("Specify 'default' to use server-configured environment variables for model, vendor, endpoint, or API key.")
             
-            embed_model_name = st.text_input("Model Name", value="default", help="e.g., sentence-transformers/all-MiniLM-L6-v2, text-embedding-3-small, or 'default'")
-            embed_vendor = st.selectbox("Vendor", ["default", "local", "openai", "ollama", "clip"], index=0, help="e.g., 'local', 'openai', 'clip', 'ollama', or 'default'")
-            embed_api_endpoint = st.text_input("API Endpoint (Optional)", value="default", help="e.g., http://localhost:11434 for Ollama, or 'default'")
-            embed_apikey = st.text_input("API Key (Optional)", type="password", value="default", help="Required for some vendors like OpenAI, or 'default'")
+            embed_model_name = st.text_input("Model Name", value="openai/clip-vit-base-patch32", help="openai/clip-vit-base-patch32 és l'únic valor vàlid.")
+            embed_vendor = st.selectbox("Vendor", ["clip"], index=0, help="e.g., 'clip'")
+            embed_api_endpoint = "default"
+            embed_apikey = "default"
 
             submitted = st.form_submit_button("Create Collection")
             if submitted:
@@ -571,10 +571,44 @@ def display_collection_detail():
                         if source_info:
                             st.markdown(", ".join(source_info))
                         
+                        image_path = metadata.get("image_path")
+                        if image_path:
+                            full_image_url = f"http://localhost:9090{image_path}" if image_path.startswith("/static") else image_path
+                            st.image(full_image_url, use_container_width=True)
+                            st.write("🔗 Image URL:", full_image_url)
+                        ocr_text = metadata.get("ocr_text")
+                        if ocr_text:
+                            with st.expander("🔍 Texto OCR"):
+                                st.code(ocr_text, language="text")
                         st.text_area(f"Content_{i}", value=result.get('data', ''), height=150, disabled=True, key=f"res_data_{collection_id}_{i}")
                         with st.expander("View Full Metadata"):
                             st.json(metadata)
+                        
+                        linked_chunk = None
+                        linked_index = metadata.get("linked_text_chunk")
+                        doc_id = metadata.get("document_id")
 
+                        if linked_index is not None and doc_id is not None:
+                            try:
+                                linked_index = int(linked_index)  # en caso de que venga como string
+                                # Buscar chunk con el mismo document_id y chunk_index == linked_text_chunk
+                                for r in st.session_state.query_results:
+                                    m = r.get("metadata", {})
+                                    if m.get("document_id") == doc_id and m.get("chunk_index") == linked_index:
+                                        linked_chunk = r
+                                        break
+                            except Exception as e:
+                                st.warning(f"Error buscando chunk vinculado: {e}")
+
+                        if linked_chunk:
+                            with st.expander("🔗 Texto relacionado con esta imagen"):
+                                st.text_area(
+                                    label="Texto vinculado",
+                                    value=linked_chunk.get("data", ""),
+                                    height=150,
+                                    disabled=True,
+                                    key=f"linked_text_{doc_id}_{linked_index}"
+                                )
 # --- Main app router ---
 if st.session_state.current_view == 'collections_list':
     display_collections_list()

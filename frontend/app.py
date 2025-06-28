@@ -546,6 +546,7 @@ def display_collection_detail():
                 try:
                     with st.spinner("Searching..."):
                         results_data = client.query_collection(collection_id, query_text, top_k, threshold)
+                        all_chunks = client.query_collection(collection_id, query_text="Imatge", top_k=9999, threshold=0.0)
                         st.session_state.query_results = results_data.get("results", [])
                 except Exception as e:
                     st.error(f"Error during query: {str(e)}")
@@ -591,31 +592,37 @@ def display_collection_detail():
                                 st.image(full_image_url, use_container_width=True)
                                 st.write("🔗 Image URL:", full_image_url)
                         
-                        linked_chunk = None
-                        linked_index = metadata.get("linked_text_chunk")
-                        doc_id = metadata.get("document_id")
+                        # Mostrar chunk de imagen vinculado, si existe
+                        related_chunk_index = metadata.get("related_image_chunk")
+                        doc_id = metadata.get("file_name")
+                        
+                        if related_chunk_index is not None and doc_id is not None:
+                            related_chunk = None
+                            for r in all_chunks.get("results", []):
+                                m = r.get("metadata", {})
+                                if m.get("file_name") == doc_id and m.get("chunk_index") == related_chunk_index:
+                                    related_chunk = r
+                                    st.write(f"Found related image chunk for doc {doc_id} at index {related_chunk_index}")
+                                    break
 
-                        if linked_index is not None and doc_id is not None:
-                            try:
-                                linked_index = int(linked_index)  # en caso de que venga como string
-                                # Buscar chunk con el mismo document_id y chunk_index == linked_text_chunk
-                                for r in st.session_state.query_results:
-                                    m = r.get("metadata", {})
-                                    if m.get("document_id") == doc_id and m.get("chunk_index") == linked_index:
-                                        linked_chunk = r
-                                        break
-                            except Exception as e:
-                                st.warning(f"Error buscando chunk vinculado: {e}")
+                            if related_chunk:
+                                with st.container(border=True):
+                                    st.markdown("🖼️ **Related Image Chunk**")
+                                    metadata_img = related_chunk.get("metadata", {})
+                                    if metadata_img.get("source"):
+                                        st.markdown(f"Source: `{metadata_img['source']}`", help="Archivo de origen")
+                                    if metadata_img.get("chunk_index") is not None:
+                                        st.markdown(f"Chunk Index: `{metadata_img['chunk_index']}`")
+                                    st.text_area(
+                                        label="Related chunk content",
+                                        value=related_chunk.get("data", ""),
+                                        height=150,
+                                        disabled=True,
+                                        key=f"related_image_chunk_{doc_id}_{related_chunk_index}"
+                                    )
+                                    with st.expander("View full metadata"):
+                                        st.json(related_chunk.get("metadata", {}))
 
-                        if linked_chunk:
-                            with st.expander("🔗 Texto relacionado con esta imagen"):
-                                st.text_area(
-                                    label="Texto vinculado",
-                                    value=linked_chunk.get("data", ""),
-                                    height=150,
-                                    disabled=True,
-                                    key=f"linked_text_{doc_id}_{linked_index}"
-                                )
 # --- Main app router ---
 if st.session_state.current_view == 'collections_list':
     display_collections_list()

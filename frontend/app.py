@@ -585,6 +585,41 @@ def display_collection_detail():
                         with st.expander("View Full Metadata"):
                             st.json(metadata)
                         
+                        linked_text_index = metadata.get("linked_text_chunk")
+                        source_basename = metadata.get("source", "").split("/")[-1].replace(".pdf", "")
+                        linked_chunk = None
+
+                        if linked_text_index is not None:
+                            try:
+                                linked_text_index = int(linked_text_index)
+                                for r in all_chunks.get("results", []):
+                                    m = r.get("metadata", {})
+                                    r_source = m.get("source", "").split("/")[-1].replace(".pdf", "")
+                                    if m.get("chunk_index") == linked_text_index and r_source == source_basename:
+                                        linked_chunk = r
+                                        break
+                            except Exception as e:
+                                st.warning(f"Error buscando chunk de texto vinculado: {e}")
+
+                        # Mostrar el chunk vinculado si existe
+                        if linked_chunk:
+                            with st.container(border=True):
+                                st.markdown("📖 **Related Text Chunk**")
+                                metadata_txt = linked_chunk.get("metadata", {})
+                                if metadata_txt.get("source"):
+                                    st.markdown(f"Source: `{metadata_txt['source']}`", help="Archivo de origen")
+                                if metadata_txt.get("chunk_index") is not None:
+                                    st.markdown(f"Chunk Index: `{metadata_txt['chunk_index']}`")
+                                st.text_area(
+                                    label="Related chunk content",
+                                    value=linked_chunk.get("data", ""),
+                                    height=150,
+                                    disabled=True,
+                                    key=f"linked_text_chunk_{source_basename}_{linked_text_index}_{i}"
+                                )
+                                with st.expander("View full metadata"):
+                                    st.json(linked_chunk.get("metadata", {}))
+
                         if metadata.get("has_image") is True:
                             image_path = metadata.get("linked_images")
                             if image_path:

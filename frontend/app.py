@@ -570,7 +570,7 @@ def display_collection_detail():
                         if metadata.get('chunk_index') is not None: source_info.append(f"Chunk: {metadata['chunk_index']}")
                         if source_info:
                             st.markdown(", ".join(source_info))
-                        
+
                         image_path = metadata.get("image_path")
                         if image_path:
                             full_image_url = f"http://localhost:9090{image_path}" if image_path.startswith("/static") else image_path
@@ -583,6 +583,13 @@ def display_collection_detail():
                         st.text_area(f"Content_{i}", value=result.get('data', ''), height=150, disabled=True, key=f"res_data_{collection_id}_{i}")
                         with st.expander("View Full Metadata"):
                             st.json(metadata)
+                        
+                        if metadata.get("has_image") is True:
+                            image_path = metadata.get("linked_images")
+                            if image_path:
+                                full_image_url = f"http://localhost:9090{image_path}" if image_path.startswith("/static") else image_path
+                                st.image(full_image_url, use_container_width=True)
+                                st.write("🔗 Image URL:", full_image_url)
                         
                         linked_chunk = None
                         linked_index = metadata.get("linked_text_chunk")

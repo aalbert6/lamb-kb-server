@@ -241,7 +241,6 @@ def display_collections_list():
             visibility = st.selectbox("Visibility", ["private", "public"], index=0)
             
             st.subheader("Embedding Configuration")
-            st.caption("Specify 'default' to use server-configured environment variables for model, vendor, endpoint, or API key.")
             
             embed_model_name = st.text_input("Model Name", value="openai/clip-vit-base-patch32", help="openai/clip-vit-base-patch32 és l'únic valor vàlid.")
             embed_vendor = st.selectbox("Vendor", ["clip"], index=0, help="e.g., 'clip'")

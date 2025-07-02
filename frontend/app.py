@@ -241,12 +241,11 @@ def display_collections_list():
             visibility = st.selectbox("Visibility", ["private", "public"], index=0)
             
             st.subheader("Embedding Configuration")
-            st.caption("Specify 'default' to use server-configured environment variables for model, vendor, endpoint, or API key.")
             
-            embed_model_name = st.text_input("Model Name", value="default", help="e.g., sentence-transformers/all-MiniLM-L6-v2, text-embedding-3-small, or 'default'")
-            embed_vendor = st.selectbox("Vendor", ["default", "local", "openai", "ollama"], index=0, help="e.g., 'local', 'openai', 'ollama', or 'default'")
-            embed_api_endpoint = st.text_input("API Endpoint (Optional)", value="default", help="e.g., http://localhost:11434 for Ollama, or 'default'")
-            embed_apikey = st.text_input("API Key (Optional)", type="password", value="default", help="Required for some vendors like OpenAI, or 'default'")
+            embed_model_name = st.text_input("Model Name", value="openai/clip-vit-base-patch32", help="openai/clip-vit-base-patch32 és l'únic valor vàlid.")
+            embed_vendor = st.selectbox("Vendor", ["clip"], index=0, help="e.g., 'clip'")
+            embed_api_endpoint = "default"
+            embed_apikey = "default"
 
             submitted = st.form_submit_button("Create Collection")
             if submitted:
@@ -433,8 +432,27 @@ def display_collection_detail():
                             height=100,
                             key=field_key
                         )
+                    elif param_info['type'] == 'boolean':
+                        user_input = st.checkbox(
+                            param_name,
+                            value=default_value if default_value is not None else False,
+                            help=param_info.get('description'),
+                            key=field_key
+                        )
+                    elif param_info['type'] == 'enum':
+                        options = param_info.get('options', [])
+                        idx = 0
+                        if default_value in options:
+                            idx = options.index(default_value)
+                        user_input = st.selectbox(
+                            param_name,
+                            options=options,
+                            index=idx,
+                            help=param_info.get('description'),
+                            key=field_key
+                            )
                     user_plugin_inputs[param_name] = user_input
-                
+
                 ingest_button_label = "Ingest"
                 uploaded_file = None
                 if selected_plugin.get('kind') == 'file-ingest':
@@ -527,6 +545,7 @@ def display_collection_detail():
                 try:
                     with st.spinner("Searching..."):
                         results_data = client.query_collection(collection_id, query_text, top_k, threshold)
+                        all_chunks = client.query_collection(collection_id, query_text="Imatge", top_k=9999, threshold=0.0)
                         st.session_state.query_results = results_data.get("results", [])
                 except Exception as e:
                     st.error(f"Error during query: {str(e)}")
@@ -551,10 +570,92 @@ def display_collection_detail():
                         if metadata.get('chunk_index') is not None: source_info.append(f"Chunk: {metadata['chunk_index']}")
                         if source_info:
                             st.markdown(", ".join(source_info))
-                        
+
+                        image_path = metadata.get("image_path")
+                        if image_path:
+                            full_image_url = f"http://localhost:9090{image_path}" if image_path.startswith("/static") else image_path
+                            st.image(full_image_url, use_container_width=True)
+                            st.write("🔗 Image URL:", full_image_url)
+                        ocr_text = metadata.get("ocr_text")
+                        if ocr_text:
+                            with st.expander("🔍 Texto OCR"):
+                                st.code(ocr_text, language="text")
                         st.text_area(f"Content_{i}", value=result.get('data', ''), height=150, disabled=True, key=f"res_data_{collection_id}_{i}")
                         with st.expander("View Full Metadata"):
                             st.json(metadata)
+                        
+                        linked_text_index = metadata.get("linked_text_chunk")
+                        source_basename = metadata.get("source", "").split("/")[-1].replace(".pdf", "")
+                        linked_chunk = None
+
+                        if linked_text_index is not None:
+                            try:
+                                linked_text_index = int(linked_text_index)
+                                for r in all_chunks.get("results", []):
+                                    m = r.get("metadata", {})
+                                    r_source = m.get("source", "").split("/")[-1].replace(".pdf", "")
+                                    if m.get("chunk_index") == linked_text_index and r_source == source_basename:
+                                        linked_chunk = r
+                                        break
+                            except Exception as e:
+                                st.warning(f"Error buscando chunk de texto vinculado: {e}")
+
+                        # Mostrar el chunk vinculado si existe
+                        if linked_chunk:
+                            with st.container(border=True):
+                                st.markdown("📖 **Related Text Chunk**")
+                                metadata_txt = linked_chunk.get("metadata", {})
+                                if metadata_txt.get("source"):
+                                    st.markdown(f"Source: `{metadata_txt['source']}`", help="Archivo de origen")
+                                if metadata_txt.get("chunk_index") is not None:
+                                    st.markdown(f"Chunk Index: `{metadata_txt['chunk_index']}`")
+                                st.text_area(
+                                    label="Related chunk content",
+                                    value=linked_chunk.get("data", ""),
+                                    height=150,
+                                    disabled=True,
+                                    key=f"linked_text_chunk_{source_basename}_{linked_text_index}_{i}"
+                                )
+                                with st.expander("View full metadata"):
+                                    st.json(linked_chunk.get("metadata", {}))
+
+                        if metadata.get("has_image") is True:
+                            image_path = metadata.get("linked_images")
+                            if image_path:
+                                full_image_url = f"http://localhost:9090{image_path}" if image_path.startswith("/static") else image_path
+                                st.image(full_image_url, use_container_width=True)
+                                st.write("🔗 Image URL:", full_image_url)
+                        
+                        # Mostrar chunk de imagen vinculado, si existe
+                        related_chunk_index = metadata.get("related_image_chunk")
+                        doc_id = metadata.get("file_name")
+                        
+                        if related_chunk_index is not None and doc_id is not None:
+                            related_chunk = None
+                            for r in all_chunks.get("results", []):
+                                m = r.get("metadata", {})
+                                if m.get("file_name") == doc_id and m.get("chunk_index") == related_chunk_index:
+                                    related_chunk = r
+                                    st.write(f"Found related image chunk for doc {doc_id} at index {related_chunk_index}")
+                                    break
+
+                            if related_chunk:
+                                with st.container(border=True):
+                                    st.markdown("🖼️ **Related Image Chunk**")
+                                    metadata_img = related_chunk.get("metadata", {})
+                                    if metadata_img.get("source"):
+                                        st.markdown(f"Source: `{metadata_img['source']}`", help="Archivo de origen")
+                                    if metadata_img.get("chunk_index") is not None:
+                                        st.markdown(f"Chunk Index: `{metadata_img['chunk_index']}`")
+                                    st.text_area(
+                                        label="Related chunk content",
+                                        value=related_chunk.get("data", ""),
+                                        height=150,
+                                        disabled=True,
+                                        key=f"related_image_chunk_{doc_id}_{related_chunk_index}"
+                                    )
+                                    with st.expander("View full metadata"):
+                                        st.json(related_chunk.get("metadata", {}))
 
 # --- Main app router ---
 if st.session_state.current_view == 'collections_list':
